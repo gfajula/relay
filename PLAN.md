@@ -1,6 +1,6 @@
 # Relay: Implementation Plan
 
-Relay is a self-hostable LLM gateway built with Python and FastAPI. It sits between client apps (Chatter, Ockham, EPUB_Catalog, anything that speaks the OpenAI API) and LLM providers (OpenRouter, Anthropic, OpenAI, local llama.cpp). It issues per-user API keys, enforces rate limits and budgets, streams responses, and records the usage and cost of every request.
+Relay is a self-hostable LLM gateway built with Python and FastAPI. It sits between client apps (anything that speaks the OpenAI API) and LLM providers (OpenRouter, Anthropic, OpenAI, local llama.cpp). It issues per-user API keys, enforces rate limits and budgets, streams responses, and records the usage and cost of every request.
 
 Goal: a public, portfolio-grade repo that shows async Python, auth, a relational database with migrations, caching/rate limiting, real integration tests, Docker, and CI.
 
@@ -50,23 +50,23 @@ Goal: a public, portfolio-grade repo that shows async Python, auth, a relational
 
 ## 2. Tech stack
 
-| Concern | Choice | Why |
-|---|---|---|
-| Language | Python 3.12 | Current, typed |
-| Package/env manager | uv | Fast, lockfile, already used in EPUB_Catalog |
-| Web framework | FastAPI + Uvicorn | Async, OpenAPI docs for free |
-| Validation/config | Pydantic v2, pydantic-settings | Typed request models and env config |
-| Database | PostgreSQL 16 | Industry standard |
-| ORM / driver | SQLAlchemy 2.0 (async) + asyncpg | Modern async ORM |
-| Migrations | Alembic | Versioned schema changes |
-| Cache / rate limiting | Redis 7 (redis-py asyncio) | Atomic counters, TTLs |
-| HTTP client | httpx (async, streaming) | Upstream provider calls |
-| Auth | PyJWT, argon2-cffi | Tokens and password hashing |
-| Logging | structlog | JSON logs with context |
-| Testing | pytest, pytest-asyncio, httpx `AsyncClient`, respx, testcontainers | Unit + real Postgres/Redis integration tests |
-| Quality | ruff (lint + format), mypy (strict), pre-commit | Consistent, typed code |
-| Containers | Docker (multi-stage), Docker Compose | One-command local start |
-| CI | GitHub Actions | Lint, types, tests, coverage, image build |
+| Concern               | Choice                                                             | Why                                          |
+| --------------------- | ------------------------------------------------------------------ | -------------------------------------------- |
+| Language              | Python 3.12                                                        | Current, typed                               |
+| Package/env manager   | uv                                                                 | Fast, lockfile, already used in EPUB_Catalog |
+| Web framework         | FastAPI + Uvicorn                                                  | Async, OpenAPI docs for free                 |
+| Validation/config     | Pydantic v2, pydantic-settings                                     | Typed request models and env config          |
+| Database              | PostgreSQL 16                                                      | Industry standard                            |
+| ORM / driver          | SQLAlchemy 2.0 (async) + asyncpg                                   | Modern async ORM                             |
+| Migrations            | Alembic                                                            | Versioned schema changes                     |
+| Cache / rate limiting | Redis 7 (redis-py asyncio)                                         | Atomic counters, TTLs                        |
+| HTTP client           | httpx (async, streaming)                                           | Upstream provider calls                      |
+| Auth                  | PyJWT, argon2-cffi                                                 | Tokens and password hashing                  |
+| Logging               | structlog                                                          | JSON logs with context                       |
+| Testing               | pytest, pytest-asyncio, httpx `AsyncClient`, respx, testcontainers | Unit + real Postgres/Redis integration tests |
+| Quality               | ruff (lint + format), mypy (strict), pre-commit                    | Consistent, typed code                       |
+| Containers            | Docker (multi-stage), Docker Compose                               | One-command local start                      |
+| CI                    | GitHub Actions                                                     | Lint, types, tests, coverage, image build    |
 
 ### Infrastructure
 
@@ -139,6 +139,7 @@ Relay/
 Estimated total: about 45 to 60 hours (rough estimate).
 
 ### Phase 0: Project skeleton (about 4 h)
+
 1. `uv init`, set Python 3.12, add dependencies and dev dependencies.
 2. Configure ruff, mypy (strict), pre-commit.
 3. App factory with `/healthz`, settings from env, `.env.example`.
@@ -147,6 +148,7 @@ Estimated total: about 45 to 60 hours (rough estimate).
 6. Create the public GitHub repo, push, confirm CI is green.
 
 ### Phase 1: Database and migrations (about 4 h)
+
 7. Async SQLAlchemy engine/session dependency.
 8. Models for users, api_keys, refresh_tokens, usage_records.
 9. Alembic setup with async env; generate and apply the initial migration.
@@ -154,6 +156,7 @@ Estimated total: about 45 to 60 hours (rough estimate).
 11. `/readyz` checking DB and Redis.
 
 ### Phase 2: Auth and API keys (about 8 h)
+
 12. Password hashing (argon2) and signup/login endpoints.
 13. JWT access tokens + rotating refresh tokens, logout/revoke.
 14. `current_user` dependency (JWT) for management endpoints.
@@ -162,6 +165,7 @@ Estimated total: about 45 to 60 hours (rough estimate).
 17. Tests: happy paths, bad credentials, expired/revoked tokens and keys.
 
 ### Phase 3: Proxy endpoint (about 8 h)
+
 18. Provider adapter interface (`complete`, `stream`) and a model → provider mapping in config.
 19. First adapter: OpenRouter (OpenAI-compatible, simplest). Then local llama.cpp.
 20. `POST /v1/chat/completions` non-streaming path.
@@ -171,35 +175,41 @@ Estimated total: about 45 to 60 hours (rough estimate).
 24. Tests with respx mocking upstream, including streaming and upstream 4xx/5xx/timeouts.
 
 ### Phase 4: Usage ledger (about 5 h)
+
 25. Pricing table (per-model input/output cost) in config.
 26. Capture token counts from the upstream response (or final stream chunk) and write a `usage_records` row after the response ends (background task).
 27. `GET /v1/usage` with filters and daily aggregates.
 28. Tests for cost calculation and aggregation queries.
 
 ### Phase 5: Rate limits and budgets (about 6 h)
+
 29. Redis sliding-window limiter (Lua script or sorted sets) per API key.
 30. Middleware/dependency returning 429 + `Retry-After` + `X-RateLimit-*` headers.
 31. Monthly spend check against the ledger (cached in Redis, invalidated on write).
 32. Tests, including concurrency (many parallel requests against one key).
 
 ### Phase 6: Operability and hardening (about 4 h)
+
 33. structlog JSON logging, request-id middleware.
 34. Problem+json error handlers for validation, auth, upstream, and rate-limit errors.
 35. CORS config, request size limits, timeouts on upstream calls.
 36. Coverage report in CI (target 80%+) and a coverage badge.
 
 ### Phase 7: Docs and polish (about 6 h)
+
 37. README: what/why, architecture diagram, quickstart (`docker compose up`), curl examples, config reference, design decisions.
 38. Seed script creating a demo user and key.
 39. Point Chatter at Relay instead of `openrtr.php` as a real-world client example (screenshot/GIF).
 40. Tag `v0.1.0` with a changelog.
 
 ### Phase 8: Deploy (about 5 h)
+
 41. Provision Postgres (Supabase/Neon) and Redis (Upstash).
 42. Deploy the API to Fly.io or Render; run migrations on release.
 43. Add a CD job (deploy on tag) and the live demo URL to the README.
 
 ### Phase 9: Stretch (optional)
+
 44. Provider fallback, response caching, admin dashboard, Prometheus metrics, teams.
 
 ---
