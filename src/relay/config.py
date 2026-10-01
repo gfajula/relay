@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     debug: bool = False
     host: str = "127.0.0.1"
     port: int = 8000
+    database_url: str = "postgresql+asyncpg://relay:relay@localhost:5432/relay"
 
 
 @lru_cache

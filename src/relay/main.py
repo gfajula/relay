@@ -1,14 +1,33 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from relay.config import Settings, get_settings
 from relay.routers import health
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or get_settings()
+    config = settings or get_settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        engine = create_async_engine(config.database_url, pool_pre_ping=True)
+        app.state.engine = engine
+        app.state.sessionmaker = async_sessionmaker(
+            engine, expire_on_commit=False
+        )
+        yield
+        await engine.dispose()
+
     app = FastAPI(
-        title=settings.app_name, version="0.1.0", debug=settings.debug
+        title=config.app_name,
+        version="0.1.0",
+        debug=config.debug,
+        lifespan=lifespan,
     )
+
     app.include_router(health.router)
     return app
 

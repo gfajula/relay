@@ -6,6 +6,8 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      RELAY_DATABASE_URL: postgresql+asyncpg://relay:relay@postgres:5432/relay
     depends_on:
       postgres:
         condition: service_healthy
