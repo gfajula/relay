@@ -8,6 +8,7 @@ services:
         required: false
     environment:
       RELAY_DATABASE_URL: postgresql+asyncpg://relay:relay@postgres:5432/relay
+      RELAY_REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy

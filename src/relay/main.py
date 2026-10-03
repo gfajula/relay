@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from relay.config import Settings, get_settings
@@ -18,7 +19,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.sessionmaker = async_sessionmaker(
             engine, expire_on_commit=False
         )
+        app.state.redis = Redis.from_url(config.redis_url)
+
         yield
+        await app.state.redis.aclose()
         await engine.dispose()
 
     app = FastAPI(
