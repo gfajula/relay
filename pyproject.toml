@@ -3,9 +3,7 @@ name = "relay"
 version = "0.1.0"
 description = "Self-hostable LLM gateway with auth, rate limits and usage tracking"
 readme = "README.md"
-authors = [
-    { name = "Guillelmus", email = "gfajula@proton.me" }
-]
+authors = [{ name = "Guillelmus", email = "gfajula@proton.me" }]
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.20.0",
@@ -31,6 +29,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.9",
+    "testcontainers[postgres]>=4.15.0",
 ]
 
 [tool.ruff]
@@ -42,7 +41,7 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "I", "B", "UP", "N", "S", "ASYNC", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S105", "S106"]
 
 [tool.mypy]
 python_version = "3.12"
