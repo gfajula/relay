@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from relay.config import Settings, get_settings
-from relay.routers import health
+from relay.routers import auth, health
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(auth.router)
     return app
 
 
