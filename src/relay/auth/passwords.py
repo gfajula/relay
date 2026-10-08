@@ -13,3 +13,6 @@ def verify_password(password_hash: str, password: str) -> bool:
         return _hasher.verify(password_hash, password)
     except (VerificationError, InvalidHashError):
         return False
+
+
+DUMMY_HASH = hash_password("dummy-password-for-timing-safety")

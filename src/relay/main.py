@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=config.debug,
         lifespan=lifespan,
     )
+    app.state.settings = config
 
     app.include_router(health.router)
     app.include_router(auth.router)
