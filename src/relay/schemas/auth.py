@@ -11,3 +11,7 @@ class TokenPair(BaseModel):
     refresh_token: str
     token_type: str = "bearer"  # noqa: S105
     expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(max_length=128)

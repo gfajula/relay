@@ -1,18 +1,113 @@
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from relay.auth.tokens import hash_token
+from relay.models import RefreshToken, User
 
 SIGNUP_URL = "/auth/signup"
 LOGIN_URL = "/auth/login"
+REFRESH_URL = "/auth/refresh"
+LOGOUT_URL = "/auth/logout"
+TEST_EMAIL = "ada@example.com"
+TEST_EMAIL_CAPS = "Ada@Example.com"
 PASSWORD = "en un lugar de la mancha"
 
 
-async def _signup(client: AsyncClient, email: str = "ada@example.com") -> None:
+async def _login(client: AsyncClient) -> dict[str, Any]:
+    await _signup(client)
+    response = await client.post(
+        LOGIN_URL, json={"email": TEST_EMAIL, "password": PASSWORD}
+    )
+    tokens: dict[str, Any] = response.json()
+    return tokens
+
+
+async def test_refresh_rotates_token(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    response = await client.post(
+        REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
+    )
+    assert response.status_code == 200
+    new_tokens = response.json()
+    assert new_tokens["refresh_token"] != tokens["refresh_token"]
+    assert new_tokens["access_token"]
+
+
+async def test_reused_refresh_token_revokes_all(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    first = await client.post(
+        REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
+    )
+    reuse = await client.post(
+        REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
+    )
+    assert reuse.status_code == 401
+
+    latest = await client.post(
+        REFRESH_URL, json={"refresh_token": first.json()["refresh_token"]}
+    )
+    assert latest.status_code == 401
+
+
+async def test_unknown_refresh_token(client: AsyncClient) -> None:
+    response = await client.post(
+        REFRESH_URL, json={"refresh_token": "not-a-real-token"}
+    )
+    assert response.status_code == 401
+
+
+async def test_expired_refresh_token(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user = User(email="old@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_token("expired-token"),
+            expires_at=datetime.now(UTC) - timedelta(seconds=1),
+        )
+    )
+    await db_session.flush()
+
+    response = await client.post(
+        REFRESH_URL, json={"refresh_token": "expired-token"}
+    )
+    assert response.status_code == 401
+
+
+async def test_logout_revokes_refresh_token(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    response = await client.post(
+        LOGOUT_URL, json={"refresh_token": tokens["refresh_token"]}
+    )
+    assert response.status_code == 204
+
+    response = await client.post(
+        REFRESH_URL, json={"refresh_token": tokens["refresh_token"]}
+    )
+    assert response.status_code == 401
+
+
+async def test_logout_unknown_token_is_no_content(client: AsyncClient) -> None:
+    response = await client.post(
+        LOGOUT_URL, json={"refresh_token": "not-a-real-token"}
+    )
+    assert response.status_code == 204
+
+
+async def _signup(client: AsyncClient, email: str = TEST_EMAIL) -> None:
     await client.post(SIGNUP_URL, json={"email": email, "password": PASSWORD})
 
 
 async def test_login_returns_token_pair(client: AsyncClient) -> None:
     await _signup(client)
     response = await client.post(
-        LOGIN_URL, json={"email": "ada@example.com", "password": PASSWORD}
+        LOGIN_URL, json={"email": TEST_EMAIL, "password": PASSWORD}
     )
     assert response.status_code == 200
     body = response.json()
@@ -25,7 +120,7 @@ async def test_login_wrong_password(client: AsyncClient) -> None:
     await _signup(client)
     response = await client.post(
         LOGIN_URL,
-        json={"email": "ada@example.com", "password": "wrong password!!"},
+        json={"email": TEST_EMAIL, "password": "wrong password!!"},
     )
     assert response.status_code == 401
 
@@ -40,16 +135,16 @@ async def test_login_unknown_email(client: AsyncClient) -> None:
 
 async def test_signup_create_user(client: AsyncClient) -> None:
     response = await client.post(
-        SIGNUP_URL, json={"email": "Ada@Example.com", "password": PASSWORD}
+        SIGNUP_URL, json={"email": TEST_EMAIL_CAPS, "password": PASSWORD}
     )
     assert response.status_code == 201
     body = response.json()
-    assert body["email"] == "ada@example.com"
+    assert body["email"] == TEST_EMAIL
     assert "password_hash" not in body
 
 
 async def test_signup_duplicate_email_conflicts(client: AsyncClient) -> None:
-    payload = {"email": "ada@example.com", "password": PASSWORD}
+    payload = {"email": TEST_EMAIL, "password": PASSWORD}
     await client.post(SIGNUP_URL, json=payload)
     response = await client.post(SIGNUP_URL, json=payload)
     assert response.status_code == 409
@@ -57,7 +152,7 @@ async def test_signup_duplicate_email_conflicts(client: AsyncClient) -> None:
 
 async def test_signup_rejects_short_password(client: AsyncClient) -> None:
     response = await client.post(
-        SIGNUP_URL, json={"email": "ada@example.com", "password": "short"}
+        SIGNUP_URL, json={"email": TEST_EMAIL, "password": "short"}
     )
     assert response.status_code == 422
 
