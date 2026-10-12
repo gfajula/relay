@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncIterator, Iterator
 
+import docker
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -17,9 +18,22 @@ from relay.config import get_settings
 from relay.db import get_session
 from relay.main import create_app
 
+DOCKER_HELP = (
+    "Docker is not running. The integration tests start Postgres and Redis "
+    "in containers. Start Docker Desktop (or OrbStack) and run pytest again."
+)
+
 
 @pytest.fixture(scope="session")
-def database_url() -> Iterator[str]:
+def docker_available() -> None:
+    try:
+        docker.from_env(timeout=5).ping()
+    except docker.errors.DockerException:
+        pytest.exit(DOCKER_HELP, returncode=1)
+
+
+@pytest.fixture(scope="session")
+def database_url(docker_available: None) -> Iterator[str]:
     with PostgresContainer("postgres:16-alpine", driver="asyncpg") as pg:
         url = pg.get_connection_url()
         os.environ["RELAY_DATABASE_URL"] = url
@@ -54,7 +68,7 @@ async def db_session(engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture(scope="session")
-def redis_url() -> Iterator[str]:
+def redis_url(docker_available: None) -> Iterator[str]:
     with RedisContainer("redis:7-alpine") as container:
         host = container.get_container_host_ip()
         port = container.get_exposed_port(6379)
