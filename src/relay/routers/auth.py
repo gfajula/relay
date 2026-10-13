@@ -11,12 +11,17 @@ from relay.auth.passwords import DUMMY_HASH, hash_password, verify_password
 from relay.auth.tokens import create_access_token, hash_token, new_refresh_token
 from relay.config import Settings
 from relay.db import SessionDep
-from relay.deps import SettingsDep
+from relay.deps import CurrentUserDep, SettingsDep
 from relay.models import RefreshToken, User
 from relay.schemas.auth import LoginRequest, RefreshRequest, TokenPair
 from relay.schemas.user import SignupRequest, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get("/me", response_model=UserOut)
+async def me(user: CurrentUserDep) -> User:
+    return user
 
 
 @router.post(

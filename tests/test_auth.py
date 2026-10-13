@@ -1,12 +1,16 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from relay.auth.tokens import hash_token
+from relay.auth.tokens import create_access_token, hash_token
+from relay.config import get_settings
 from relay.models import RefreshToken, User
 
+ME_URL = "/auth/me"
 SIGNUP_URL = "/auth/signup"
 LOGIN_URL = "/auth/login"
 REFRESH_URL = "/auth/refresh"
@@ -16,6 +20,10 @@ TEST_EMAIL_CAPS = "Ada@Example.com"
 PASSWORD = "en un lugar de la mancha"
 
 
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 async def _login(client: AsyncClient) -> dict[str, Any]:
     await _signup(client)
     response = await client.post(
@@ -23,6 +31,55 @@ async def _login(client: AsyncClient) -> dict[str, Any]:
     )
     tokens: dict[str, Any] = response.json()
     return tokens
+
+
+async def test_me_returns_current_user(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    response = await client.get(ME_URL, headers=_bearer(tokens["access_token"]))
+    assert response.status_code == 200
+    assert response.json()["email"] == TEST_EMAIL
+
+
+async def test_me_without_token(client: AsyncClient) -> None:
+    response = await client.get(ME_URL)
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+async def test_me_with_garbage_token(client: AsyncClient) -> None:
+    response = await client.get(ME_URL, headers=_bearer("not-a-jwt"))
+    assert response.status_code == 401
+
+
+async def test_me_with_expired_token(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    me = await client.get(ME_URL, headers=_bearer(tokens["access_token"]))
+    user_id = uuid.UUID(me.json()["id"])
+    secret = get_settings().jwt_secret.get_secret_value()
+    token = create_access_token(user_id, secret, timedelta(seconds=-1))
+    response = await client.get(ME_URL, headers=_bearer(token))
+    assert response.status_code == 401
+
+
+async def test_me_rejects_refresh_token(client: AsyncClient) -> None:
+    tokens = await _login(client)
+    response = await client.get(
+        ME_URL, headers=_bearer(tokens["refresh_token"])
+    )
+    assert response.status_code == 401
+
+
+async def test_me_inactive_user(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    tokens = await _login(client)
+    user = await db_session.scalar(select(User).where(User.email == TEST_EMAIL))
+    assert user is not None
+    user.is_active = False
+    await db_session.flush()
+
+    response = await client.get(ME_URL, headers=_bearer(tokens["access_token"]))
+    assert response.status_code == 401
 
 
 async def test_refresh_rotates_token(client: AsyncClient) -> None:
