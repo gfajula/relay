@@ -1,5 +1,5 @@
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 
 import docker
 import pytest
@@ -17,6 +17,9 @@ from testcontainers.community.redis import RedisContainer
 from relay.config import get_settings
 from relay.db import get_session
 from relay.main import create_app
+
+TEST_EMAIL = "ada@example.com"
+PASSWORD = "en un lugar de la mancha"
 
 DOCKER_HELP = (
     "Docker is not running. The integration tests start Postgres and Redis "
@@ -86,3 +89,25 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+LoginAs = Callable[[str], Awaitable[dict[str, str]]]
+
+
+@pytest.fixture
+def login_as(client: AsyncClient) -> LoginAs:
+    async def _login_as(email: str) -> dict[str, str]:
+        credentials = {"email": email, "password": PASSWORD}
+        await client.post("/auth/signup", json=credentials)
+        response = await client.post("/auth/login", json=credentials)
+        # print("___________________________________")
+        # print(response)
+        # print("___________________________________")
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    return _login_as
+
+
+@pytest.fixture
+async def auth_headers(login_as: LoginAs) -> dict[str, str]:
+    return await login_as(TEST_EMAIL)
