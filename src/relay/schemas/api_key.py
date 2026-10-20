@@ -28,3 +28,12 @@ class ApiKeyOut(BaseModel):
 
 class ApiKeyCreated(ApiKeyOut):
     key: str
+
+
+class ApiKeyPrincipal(BaseModel):
+    model_config = ConfigDict(from_attributes=True, frozen=True)
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    rpm_limit: int
+    monthly_budget_usd: Decimal | None

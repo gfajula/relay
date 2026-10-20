@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 
-from relay.auth.api_keys import generate_api_key
+from relay.auth.api_keys import cache_key, generate_api_key
 from relay.auth.tokens import hash_token
 from relay.db import SessionDep
-from relay.deps import CurrentUserDep
+from relay.deps import CurrentUserDep, RedisDep
 from relay.models import ApiKey
 from relay.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 
@@ -51,7 +51,10 @@ async def list_keys(
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_key(
-    key_id: uuid.UUID, user: CurrentUserDep, session: SessionDep
+    key_id: uuid.UUID,
+    user: CurrentUserDep,
+    session: SessionDep,
+    redis: RedisDep,
 ) -> Response:
     api_key = await session.get(ApiKey, key_id)
     if api_key is None or api_key.user_id != user.id:
@@ -59,4 +62,5 @@ async def revoke_key(
     if api_key.revoked_at is None:
         api_key.revoked_at = datetime.now(UTC)
         await session.commit()
+        await redis.delete(cache_key(api_key.key_hash))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -6,6 +6,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -16,6 +17,7 @@ from testcontainers.community.redis import RedisContainer
 
 from relay.config import get_settings
 from relay.db import get_session
+from relay.deps import get_redis
 from relay.main import create_app
 
 TEST_EMAIL = "ada@example.com"
@@ -79,12 +81,18 @@ def redis_url(docker_available: None) -> Iterator[str]:
 
 
 @pytest.fixture
-async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
+async def client(
+    db_session: AsyncSession, redis_client: Redis
+) -> AsyncIterator[AsyncClient]:
     app = create_app()
 
     async def override_session() -> AsyncIterator[AsyncSession]:
         yield db_session
 
+    def override_redis() -> Redis:
+        return redis_client
+
+    app.dependency_overrides[get_redis] = override_redis
     app.dependency_overrides[get_session] = override_session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -111,3 +119,11 @@ def login_as(client: AsyncClient) -> LoginAs:
 @pytest.fixture
 async def auth_headers(login_as: LoginAs) -> dict[str, str]:
     return await login_as(TEST_EMAIL)
+
+
+@pytest.fixture
+async def redis_client(redis_url: str) -> AsyncIterator[Redis]:
+    client = Redis.from_url(redis_url)
+    yield client
+    await client.flushdb()
+    await client.aclose()
