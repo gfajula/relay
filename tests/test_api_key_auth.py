@@ -1,5 +1,7 @@
 from typing import Any
 
+import pytest
+from fastapi import FastAPI
 from httpx import AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy import update
@@ -7,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from relay.auth.api_keys import authenticate_api_key, cache_key
 from relay.auth.tokens import hash_token
-from relay.models import User
+from relay.deps import ApiKeyPrincipalDep
+from relay.models import ApiKey, User
 
 KEYS_URL = "/keys"
 
@@ -115,3 +118,57 @@ async def test_inactive_user_key_is_rejected(
     )
 
     assert principal is None
+
+
+async def test_cached_principal_is_served_from_redis(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncClient,
+    redis_client: Redis,
+) -> None:
+    created = await _create_key(client, auth_headers)
+    await authenticate_api_key(created["key"], db_session, redis_client)
+
+    await db_session.execute(update(ApiKey).values(rpm_limit=999))
+    principal = await authenticate_api_key(
+        created["key"], db_session, redis_client
+    )
+
+    assert principal is not None
+    assert (
+        principal.rpm_limit == 5
+    )  # Coming from Redis, not the DB value updated above.
+
+
+WHOAMI_URL = "/_test/whoami"
+
+
+@pytest.fixture
+def whoami(app: FastAPI) -> str:
+    @app.get(WHOAMI_URL)
+    async def _whoami(principal: ApiKeyPrincipalDep) -> dict[str, str]:
+        return {"key_id": str(principal.id)}
+
+    return WHOAMI_URL
+
+
+async def test_dependency_accepts_valid_key(
+    client: AsyncClient, auth_headers: dict[str, str], whoami: str
+) -> None:
+    created = await _create_key(client, auth_headers)
+
+    response = await client.get(
+        whoami, headers={"Authorization": f"Bearer {created['key']}"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"key_id": created["id"]}
+
+
+async def test_dependency_rejects_missing_or_bad_key(
+    client: AsyncClient, auth_headers: dict[str, str], whoami: str
+) -> None:
+    for headers in [{}, {"Authorization": "Bearer rly_nope"}, auth_headers]:
+        response = await client.get(whoami, headers=headers)
+        assert response.status_code == 401, headers
+        assert response.headers["WWW-Authenticate"] == "Bearer"

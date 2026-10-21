@@ -110,3 +110,17 @@ async def test_cannot_revoke_someone_elses_key(
     )
 
     assert response.status_code == 404
+
+
+async def test_revoking_twice_is_idempotent(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    created = await client.post(
+        KEYS_URL, json={"name": "laptop"}, headers=auth_headers
+    )
+    url = f"{KEYS_URL}/{created.json()['id']}"
+
+    first = await client.delete(url, headers=auth_headers)
+    second = await client.delete(url, headers=auth_headers)
+
+    assert first.status_code == second.status_code == 204

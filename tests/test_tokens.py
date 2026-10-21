@@ -28,3 +28,13 @@ def test_token_signed_with_other_secret_is_rejected() -> None:
     )
     with pytest.raises(jwt.InvalidSignatureError):
         decode_access_token(token, SECRET)
+
+
+def test_token_without_access_type_is_rejected() -> None:
+    token = jwt.encode(
+        {"sub": str(uuid.uuid4()), "type": "refresh", "exp": 9_999_999_999},
+        SECRET,
+        algorithm="HS256",
+    )
+    with pytest.raises(jwt.InvalidTokenError, match="Not an access token"):
+        decode_access_token(token, SECRET)

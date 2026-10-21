@@ -5,6 +5,7 @@ import docker
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import (
@@ -81,11 +82,14 @@ def redis_url(docker_available: None) -> Iterator[str]:
 
 
 @pytest.fixture
-async def client(
-    db_session: AsyncSession, redis_client: Redis
-) -> AsyncIterator[AsyncClient]:
-    app = create_app()
+def app() -> FastAPI:
+    return create_app()
 
+
+@pytest.fixture
+async def client(
+    app: FastAPI, db_session: AsyncSession, redis_client: Redis
+) -> AsyncIterator[AsyncClient]:
     async def override_session() -> AsyncIterator[AsyncSession]:
         yield db_session
 
