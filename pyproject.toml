@@ -32,6 +32,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.16.9",
     "testcontainers[postgres]>=4.15.0",
 ]
@@ -56,3 +57,12 @@ plugins = ["pydantic.mypy"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-ra"
+
+[tool.coverage.run]
+source = ["relay"]
+concurrency = ["greenlet", "thread"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
